@@ -6,12 +6,11 @@ import android.database.Cursor;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
-import android.preference.PreferenceFragment;
 import android.preference.PreferenceManager;
 import android.provider.MediaStore;
+import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.PopupMenu;
 import android.util.Log;
@@ -26,12 +25,12 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
     private static final int RESULT_LOAD_IMAGE = 1;
     private static final String TAG = "GfxTablet.Canvas";
 
-    final Uri homepageUri = Uri.parse(("https://gfxtablet.bitfire.at"));
+    private final static Uri homepageUri = Uri.parse("https://gfxtablet.bitfire.at");
 
-    NetworkClient netClient;
+    private NetworkClient netClient;
 
-    SharedPreferences preferences;
-    boolean fullScreen = false;
+    private SharedPreferences preferences;
+    private boolean fullScreen = false;
 
 
     @Override
@@ -44,13 +43,17 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
         setContentView(R.layout.activity_canvas);
 
         // create network client in a separate thread
-        netClient = new NetworkClient(PreferenceManager.getDefaultSharedPreferences(this));
-        new Thread(netClient).start();
-        new ConfigureNetworkingTask().execute();
+        netClient = new NetworkClient();
+        if (!netClient.create()) {
+            Toast.makeText(this, "Failed to create client", Toast.LENGTH_LONG).show();
+        } else {
+            updateNetworkConfig();
+        }
 
         // notify CanvasView of the network client
         CanvasView canvas = (CanvasView)findViewById(R.id.canvas);
-        canvas.setNetworkClient(netClient);
+        if (canvas != null)
+            canvas.setNetworkClient(netClient);
     }
 
     @Override
@@ -68,7 +71,7 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        netClient.getQueue().add(new NetEvent(NetEvent.Type.TYPE_DISCONNECT));
+        netClient.destroy();
     }
 
     @Override
@@ -105,7 +108,7 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
         switch (key) {
             case SettingsActivity.KEY_PREF_HOST:
                 Log.i(TAG, "Recipient host changed, reconfiguring network client");
-                new ConfigureNetworkingTask().execute();
+                updateNetworkConfig();
                 break;
         }
     }
@@ -135,11 +138,15 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
         fullScreen = (visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) != 0;
 
         // show/hide action bar according to full-screen mode
-        if (fullScreen) {
-            CanvasActivity.this.getSupportActionBar().hide();
-            Toast.makeText(CanvasActivity.this, "Press Back button to leave full-screen mode.", Toast.LENGTH_LONG).show();
-        } else
-            CanvasActivity.this.getSupportActionBar().show();
+        ActionBar actionBar = CanvasActivity.this.getSupportActionBar();
+        if (actionBar != null) {
+            if (fullScreen) {
+                actionBar.hide();
+                Toast.makeText(CanvasActivity.this, "Press Back button to leave full-screen mode.", Toast.LENGTH_LONG).show();
+            } else {
+                actionBar.show();
+            }
+        }
     }
 
 
@@ -166,7 +173,7 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
     }
 
     public void clearTemplateImage(MenuItem item) {
-        preferences.edit().remove(SettingsActivity.KEY_TEMPLATE_IMAGE).commit();
+        preferences.edit().remove(SettingsActivity.KEY_TEMPLATE_IMAGE).apply();
         showTemplateImage();
     }
 
@@ -178,22 +185,27 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
             String[] filePathColumn = { MediaStore.Images.Media.DATA };
 
             Cursor cursor = getContentResolver().query(selectedImage, filePathColumn, null, null, null);
-            try {
-                cursor.moveToFirst();
+            if (cursor != null) {
+                try {
+                    cursor.moveToFirst();
 
-                int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
-                String picturePath = cursor.getString(columnIndex);
+                    int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+                    String picturePath = cursor.getString(columnIndex);
 
-                preferences.edit().putString(SettingsActivity.KEY_TEMPLATE_IMAGE, picturePath).commit();
-                showTemplateImage();
-            } finally {
-                cursor.close();
+                    preferences.edit().putString(SettingsActivity.KEY_TEMPLATE_IMAGE, picturePath).apply();
+                    showTemplateImage();
+                } finally {
+                    cursor.close();
+                }
             }
         }
     }
 
     public void showTemplateImage() {
         ImageView template = (ImageView)findViewById(R.id.canvas_template);
+        if (template == null)
+            return;
+
         template.setImageDrawable(null);
 
         if (template.getVisibility() == View.VISIBLE) {
@@ -210,20 +222,19 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
         }
     }
 
+    private void updateNetworkConfig() {
+        String host = preferences.getString(SettingsActivity.KEY_PREF_HOST, "unknown.invalid");
 
-    private class ConfigureNetworkingTask extends AsyncTask<Void, Void, Boolean> {
-        @Override
-        protected Boolean doInBackground(Void... params) {
-            return netClient.reconfigureNetworking();
-        }
+        boolean success = netClient.setNetworkConfig(host);
+        if (success)
+            Toast.makeText(CanvasActivity.this, "Touch events will be sent to " + host
+                    + ":" + NetworkClient.GFXTABLET_PORT, Toast.LENGTH_LONG).show();
 
-        protected void onPostExecute(Boolean success) {
-            if (success)
-                Toast.makeText(CanvasActivity.this, "Touch events will be sent to " + netClient.destAddress.getHostAddress() + ":" + NetworkClient.GFXTABLET_PORT, Toast.LENGTH_LONG).show();
-
-            findViewById(R.id.canvas_template).setVisibility(success ? View.VISIBLE : View.GONE);
-            findViewById(R.id.canvas).setVisibility(success ? View.VISIBLE : View.GONE);
-            findViewById(R.id.canvas_message).setVisibility(success ? View.GONE : View.VISIBLE);
+        int[] viewIds = {R.id.canvas, R.id.canvas_template, R.id.canvas_message};
+        for (int id :viewIds) {
+            View view = findViewById(id);
+            if (view != null)
+                view.setVisibility(success ? View.VISIBLE : View.GONE);
         }
     }
 

@@ -59,3 +59,13 @@ local.properties
 
 # PDT-specific
 .buildpath
+
+# backup
+*~
+
+# qt creator
+*.creator.user
+driver-uinput/GfxTablet.config
+driver-uinput/GfxTablet.creator
+driver-uinput/GfxTablet.files
+driver-uinput/GfxTablet.includes

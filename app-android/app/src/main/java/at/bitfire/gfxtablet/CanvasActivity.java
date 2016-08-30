@@ -21,7 +21,8 @@ import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.Toast;
 
-public class CanvasActivity extends AppCompatActivity implements View.OnSystemUiVisibilityChangeListener, SharedPreferences.OnSharedPreferenceChangeListener {
+public class CanvasActivity extends AppCompatActivity implements View.OnSystemUiVisibilityChangeListener,
+        SharedPreferences.OnSharedPreferenceChangeListener {
     private static final int RESULT_LOAD_IMAGE = 1;
     private static final String TAG = "GfxTablet.Canvas";
 
@@ -120,22 +121,23 @@ public class CanvasActivity extends AppCompatActivity implements View.OnSystemUi
         final View decorView = getWindow().getDecorView();
         int uiFlags = decorView.getSystemUiVisibility();
 
-        if (Build.VERSION.SDK_INT >= 14)
-            uiFlags ^= View.SYSTEM_UI_FLAG_HIDE_NAVIGATION;
-        if (Build.VERSION.SDK_INT >= 16)
+        if (Build.VERSION.SDK_INT >= 16) {
             uiFlags ^= View.SYSTEM_UI_FLAG_FULLSCREEN;
+        } else if (Build.VERSION.SDK_INT >= 14) {
+            uiFlags ^= View.SYSTEM_UI_FLAG_HIDE_NAVIGATION;
+        }
+
         if (Build.VERSION.SDK_INT >= 19)
             uiFlags ^= View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
 
         decorView.setOnSystemUiVisibilityChangeListener(this);
         decorView.setSystemUiVisibility(uiFlags);
+        fullScreen = !fullScreen;
     }
 
     @Override
     public void onSystemUiVisibilityChange(int visibility) {
         Log.i("GfxTablet", "System UI changed " + visibility);
-
-        fullScreen = (visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) != 0;
 
         // show/hide action bar according to full-screen mode
         ActionBar actionBar = CanvasActivity.this.getSupportActionBar();
